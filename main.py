@@ -1,11 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-import heapq
-import os
-import json
-import math
-import hashlib
-import shutil
+from tkinter import messagebox
+import heapq, os, json, math, hashlib, shutil
 
 # Predefined graph data representing Austria's highway and road network
 CITIES = {
@@ -18,9 +13,7 @@ CITIES = {
 
 class Edge:
     def __init__(self, a, b, dist, speed, vig=False, jam=False, risk=0.0, elev=0.0, fuel=0.0, eco=5.0):
-        self.node_a, self.node_b, self.distance, self.speed_limit = a, b, dist, speed
-        self.has_vignette, self.traffic_jam, self.traffic_risk = vig, jam, risk
-        self.elevation_diff, self.fuel_consumption, self.eco_score = elev, fuel, eco
+        self.node_a, self.node_b, self.distance, self.speed_limit, self.has_vignette, self.traffic_jam, self.traffic_risk, self.elevation_diff, self.fuel_consumption, self.eco_score = a, b, dist, speed, vig, jam, risk, elev, fuel, eco
 
 EDGES = [
     Edge("Bregenz", "Innsbruck", 130, 100, vig=True, elev=1200, fuel=12.5, eco=4),
@@ -54,29 +47,26 @@ def get_credentials_path():
 
 def reset_data_directory():
     if os.path.exists("data"):
-        for filename in os.listdir("data"):
-            file_path = os.path.join("data", filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path): os.unlink(file_path)
-                elif os.path.isdir(file_path): shutil.rmtree(file_path)
-            except Exception as e: print(f"Error clearing {file_path}: {e}")
+        for f in os.listdir("data"):
+            path = os.path.join("data", f)
+            shutil.rmtree(path) if os.path.isdir(path) else os.unlink(path)
         messagebox.showinfo("Erfolg", "Alle Dateien im Ordner 'data/' wurden gelöscht!")
     else:
-        messagebox.showinfo("Information", "Der Ordner 'data/' existiert nicht oder ist bereits leer.")
+        messagebox.showinfo("Info", "Der Ordner 'data/' existiert nicht oder ist leer.")
 
-def calculate_cost(edge, mode, avoid_vignette, avoid_traffic):
+def calculate_cost(e, mode, avoid_vig, avoid_traf):
     costs = {
-        "Shortest": edge.distance,
-        "Fastest": (edge.distance / edge.speed_limit) * (1.0 + (2.0 if edge.traffic_jam else 0) + (edge.traffic_risk * 1.5 if avoid_traffic else 0)),
-        "Fuel": edge.fuel_consumption,
-        "Eco": (11 - edge.eco_score) * edge.distance,
-        "Flat": edge.elevation_diff
+        "Shortest": e.distance,
+        "Fastest": (e.distance / e.speed_limit) * (1.0 + (2.0 if e.traffic_jam else 0) + (e.traffic_risk * 1.5 if avoid_traf else 0)),
+        "Fuel": e.fuel_consumption,
+        "Eco": (11 - e.eco_score) * e.distance,
+        "Flat": e.elevation_diff
     }
-    cost = costs.get(mode, edge.distance)
-    if avoid_vignette and edge.has_vignette:
+    cost = costs.get(mode, e.distance)
+    if avoid_vig and e.has_vignette:
         cost += {"Shortest": 500.0, "Fastest": 5.0, "Fuel": 50.0, "Eco": 5000.0, "Flat": 2000.0}.get(mode, 500.0)
-    if avoid_traffic and mode != "Fastest":
-        cost += (150.0 if edge.traffic_jam else 0) + edge.traffic_risk * 75.0
+    if avoid_traf and mode != "Fastest":
+        cost += (150.0 if e.traffic_jam else 0) + e.traffic_risk * 75.0
     return cost
 
 def dijkstra(start_name, end_name, mode="Fastest", avoid_vignette=False, avoid_traffic=False):
@@ -162,23 +152,38 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
                     f"{' [Vignette]' if e.has_vignette else ''}{' [STAU!]' if e.traffic_jam else ''}\n")
         f.write("==================================================\n")
 
-class LoginWindow:
-    def __init__(self, controller):
-        self.controller = controller
-        self.root = tk.Toplevel()
-        self.root.title("Antigravity - Anmeldung")
-        self.root.geometry("400x380")
-        self.root.resizable(False, False)
+class RouteFinderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Antigravity Route Finder")
+        self.root.geometry("1200x820")
+        self.root.minsize(1050, 700)
         self.root.configure(bg="#1E1E24")
-        self.root.protocol("WM_DELETE_WINDOW", self.controller.shutdown)
         
-        tk.Label(self.root, text="Benutzeranmeldung", bg="#1E1E24", fg="#06D6A0", font=("Segoe UI", 16, "bold")).pack(pady=(20, 20))
-        form = tk.Frame(self.root, bg="#2B2D42", bd=1, relief="flat", padx=20, pady=20)
-        form.pack(padx=20, fill="x")
+        # Color Theme Constants
+        self.bg_dark, self.bg_sidebar, self.bg_card, self.fg_white, self.fg_muted = "#1E1E24", "#2B2D42", "#3F4257", "#EDF2F4", "#8D99AE"
+        self.color_start, self.color_dest, self.color_path, self.color_vignette, self.color_traffic = "#3A86C8", "#EF233C", "#06D6A0", "#FF9F1C", "#D90429"
+        
+        # Initial State
+        self.start_city, self.dest_city, self.selected_edge = "Wien", "Bregenz", None
+        self.path_nodes, self.path_edges = [], []
+        self.zoom_factor = 1.0
+        
+        # First show login screen
+        self.show_login_screen()
+
+    def show_login_screen(self):
+        self.login_frame = tk.Frame(self.root, bg=self.bg_dark)
+        self.login_frame.pack(expand=True, fill="both")
+        
+        tk.Label(self.login_frame, text="Benutzeranmeldung", bg=self.bg_dark, fg=self.color_path, font=("Segoe UI", 18, "bold")).pack(pady=20)
+        
+        form = tk.Frame(self.login_frame, bg=self.bg_sidebar, bd=0, padx=20, pady=20)
+        form.pack(padx=20, fill="x", maxsize=(400, 200))
         
         def add_input(lbl_text, row, show=None):
-            tk.Label(form, text=lbl_text, bg="#2B2D42", fg="#EDF2F4", font=("Segoe UI", 10)).grid(row=row, column=0, sticky="w", pady=5)
-            ent = tk.Entry(form, show=show, bg="#3F4257", fg="#EDF2F4", insertbackground="#EDF2F4", bd=0, font=("Segoe UI", 10))
+            tk.Label(form, text=lbl_text, bg=self.bg_sidebar, fg=self.fg_white, font=("Segoe UI", 10)).grid(row=row, column=0, sticky="w", pady=5)
+            ent = tk.Entry(form, show=show, bg=self.bg_card, fg=self.fg_white, insertbackground=self.fg_white, bd=0, font=("Segoe UI", 10))
             ent.grid(row=row, column=1, sticky="ew", padx=(10, 0), pady=5)
             return ent
             
@@ -186,13 +191,13 @@ class LoginWindow:
         self.ent_pwd = add_input("Passwort:", 1, show="*")
         form.columnconfigure(1, weight=1)
         
-        btn_frame = tk.Frame(self.root, bg="#1E1E24")
+        btn_frame = tk.Frame(self.login_frame, bg=self.bg_dark)
         btn_frame.pack(pady=15, fill="x", padx=20)
-        tk.Button(btn_frame, text="Anmelden", command=self.handle_login, bg="#06D6A0", fg="#1E1E24", font=("Segoe UI", 10, "bold"), bd=0).pack(side="left", padx=5, expand=True, fill="x")
-        tk.Button(btn_frame, text="Registrieren", command=self.handle_register, bg="#4A4E69", fg="#EDF2F4", font=("Segoe UI", 10, "bold"), bd=0).pack(side="right", padx=5, expand=True, fill="x")
+        tk.Button(btn_frame, text="Anmelden", command=self.handle_login, bg=self.color_path, fg=self.bg_dark, font=("Segoe UI", 10, "bold"), bd=0, height=1).pack(side="left", padx=5, expand=True, fill="x")
+        tk.Button(btn_frame, text="Registrieren", command=self.handle_register, bg="#4A4E69", fg=self.fg_white, font=("Segoe UI", 10, "bold"), bd=0, height=1).pack(side="right", padx=5, expand=True, fill="x")
         
-        tk.Frame(self.root, height=1, bg="#3F4257").pack(fill="x", padx=20, pady=10)
-        tk.Button(self.root, text="Daten zurücksetzen (data/ Ordner leeren)", command=reset_data_directory, bg="#EF233C", fg="#EDF2F4", font=("Segoe UI", 9, "bold"), bd=0).pack(fill="x", padx=25, pady=5)
+        tk.Frame(self.login_frame, height=1, bg=self.bg_card).pack(fill="x", padx=20, pady=10)
+        tk.Button(self.login_frame, text="Daten zurücksetzen (data/ Ordner leeren)", command=reset_data_directory, bg=self.color_dest, fg=self.fg_white, font=("Segoe UI", 9, "bold"), bd=0, height=1).pack(fill="x", padx=25, pady=5)
 
     def handle_login(self):
         user, pwd = self.ent_user.get().strip(), self.ent_pwd.get()
@@ -202,15 +207,17 @@ class LoginWindow:
         
         with open(cred_path, "r", encoding="utf-8") as f: credentials = json.load(f)
         if credentials.get(user) == hash_password(pwd, user):
-            self.controller.login_success()
+            self.login_frame.destroy()
+            self.create_main_layout()
+            self.calculate_route()
+            self.center_map()
         else:
-            messagebox.showerror("Fehler", "Falscher Benutzername oder Passwort!")
+            messagebox.showerror("Fehler", "Falsches Passwort oder Benutzername!")
 
     def handle_register(self):
         user, pwd = self.ent_user.get().strip(), self.ent_pwd.get()
         if not user or not pwd: return messagebox.showerror("Fehler", "Bitte füllen Sie alle Felder aus!")
         if len(user) < 3 or len(pwd) < 4: return messagebox.showerror("Fehler", "Username min. 3, Passwort min. 4 Zeichen!")
-        
         cred_path = get_credentials_path()
         credentials = {}
         if os.path.exists(cred_path):
@@ -219,57 +226,14 @@ class LoginWindow:
         
         credentials[user] = hash_password(pwd, user)
         with open(cred_path, "w", encoding="utf-8") as f: json.dump(credentials, f, indent=4)
-        messagebox.showinfo("Erfolg", f"Registrierung erfolgreich!")
+        messagebox.showinfo("Erfolg", "Registrierung erfolgreich!")
 
-class RouteFinderApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Antigravity Route Finder")
-        self.root.geometry("1200x820")
-        self.root.minsize(1050, 700)
-        
-        self.start_city, self.dest_city, self.selected_edge = "Wien", "Bregenz", None
-        self.path_nodes, self.path_edges = [], []
-        self.zoom_factor, self.pan_start_x, self.pan_start_y = 1.0, 0, 0
-        
-        self.bg_dark, self.bg_sidebar, self.bg_card = "#1E1E24", "#2B2D42", "#3F4257"
-        self.fg_white, self.fg_muted = "#EDF2F4", "#8D99AE"
-        self.color_normal, self.color_start, self.color_dest, self.color_path, self.color_vignette, self.color_traffic = \
-            "#4A4E69", "#3A86C8", "#EF233C", "#06D6A0", "#FF9F1C", "#D90429"
-            
-        self.setup_styles()
-        self.create_layout()
-        self.calculate_route()
-        self.center_map()
-
-    def setup_styles(self):
-        self.root.configure(bg=self.bg_dark)
-        style = ttk.Style()
-        style.theme_use("clam")
-        configs = {
-            "TFrame": {"background": self.bg_dark},
-            "Sidebar.TFrame": {"background": self.bg_sidebar},
-            "Card.TFrame": {"background": self.bg_card, "borderwidth": 1, "relief": "flat"},
-            "TLabel": {"background": self.bg_dark, "foreground": self.fg_white, "font": ("Segoe UI", 10)},
-            "Sidebar.TLabel": {"background": self.bg_sidebar, "foreground": self.fg_white, "font": ("Segoe UI", 10)},
-            "Card.TLabel": {"background": self.bg_card, "foreground": self.fg_white, "font": ("Segoe UI", 10)},
-            "Title.TLabel": {"background": self.bg_sidebar, "foreground": self.fg_white, "font": ("Segoe UI", 14, "bold")},
-            "Header.TLabel": {"background": self.bg_card, "foreground": self.color_path, "font": ("Segoe UI", 11, "bold")},
-            "TButton": {"font": ("Segoe UI", 10, "bold"), "background": self.color_normal, "foreground": self.fg_white, "borderwidth": 0},
-            "TCombobox": {"fieldbackground": self.bg_card, "background": self.bg_sidebar, "foreground": self.fg_white, "arrowcolor": self.fg_white},
-            "TCheckbutton": {"background": self.bg_sidebar, "foreground": self.fg_white, "font": ("Segoe UI", 10)},
-            "TRadiobutton": {"background": self.bg_sidebar, "foreground": self.fg_white, "font": ("Segoe UI", 10)}
-        }
-        for name, opts in configs.items(): style.configure(name, **opts)
-        style.map("TButton", background=[("active", "#5a5e7d"), ("pressed", "#3a3d54")])
-        style.map("TCheckbutton", background=[("active", self.bg_sidebar)], foreground=[("active", self.fg_white)])
-        style.map("TRadiobutton", background=[("active", self.bg_sidebar)], foreground=[("active", self.fg_white)])
-
-    def create_layout(self):
+    def create_main_layout(self):
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         
-        map_frame = ttk.Frame(self.root, padding=5)
+        # Map Left
+        map_frame = tk.Frame(self.root, bg=self.bg_dark, padx=5, pady=5)
         map_frame.grid(row=0, column=0, sticky="nsew")
         map_frame.rowconfigure(0, weight=1)
         map_frame.columnconfigure(0, weight=1)
@@ -277,9 +241,9 @@ class RouteFinderApp:
         self.canvas = tk.Canvas(map_frame, bg=self.bg_dark, highlightthickness=1, highlightbackground=self.bg_card)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         
-        hbar = ttk.Scrollbar(map_frame, orient="horizontal", command=self.canvas.xview)
+        hbar = tk.Scrollbar(map_frame, orient="horizontal", command=self.canvas.xview)
         hbar.grid(row=1, column=0, sticky="ew")
-        vbar = ttk.Scrollbar(map_frame, orient="vertical", command=self.canvas.yview)
+        vbar = tk.Scrollbar(map_frame, orient="vertical", command=self.canvas.yview)
         vbar.grid(row=0, column=1, sticky="ns")
         self.canvas.configure(xscrollcommand=hbar.set, yscrollcommand=vbar.set)
         
@@ -289,37 +253,36 @@ class RouteFinderApp:
         self.canvas.bind("<Button-4>", self.on_canvas_zoom)
         self.canvas.bind("<Button-5>", self.on_canvas_zoom)
         
-        sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", padding=15, width=370)
+        # Sidebar Right
+        sidebar = tk.Frame(self.root, bg=self.bg_sidebar, padx=15, pady=15, width=370)
         sidebar.grid(row=0, column=1, sticky="nsew")
         sidebar.grid_propagate(False)
         sidebar.columnconfigure(0, weight=1)
-        ttk.Label(sidebar, text="Österreich Routenplaner", style="Title.TLabel").grid(row=0, column=0, pady=(0, 10), sticky="w")
         
-        # Start/Ziel Card
-        sel_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
+        tk.Label(sidebar, text="Österreich Routenplaner", bg=self.bg_sidebar, fg=self.fg_white, font=("Segoe UI", 14, "bold")).grid(row=0, column=0, pady=(0, 10), sticky="w")
+        
+        # Comboboxes Start/Dest Card
+        sel_card = tk.Frame(sidebar, bg=self.bg_card, padx=10, pady=10)
         sel_card.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         sel_card.columnconfigure(1, weight=1)
-        ttk.Label(sel_card, text="Start & Ziel", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
+        tk.Label(sel_card, text="Start & Ziel", bg=self.bg_card, fg=self.color_path, font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
         
-        ttk.Label(sel_card, text="Start:", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=5)
+        tk.Label(sel_card, text="Start:", bg=self.bg_card, fg=self.fg_white).grid(row=1, column=0, sticky="w", pady=5)
         self.start_combo = ttk.Combobox(sel_card, values=list(CITIES.keys()), state="readonly")
         self.start_combo.set(self.start_city)
         self.start_combo.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=5)
         self.start_combo.bind("<<ComboboxSelected>>", self.on_combo_change)
         
-        ttk.Label(sel_card, text="Ziel:", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=5)
+        tk.Label(sel_card, text="Ziel:", bg=self.bg_card, fg=self.fg_white).grid(row=2, column=0, sticky="w", pady=5)
         self.dest_combo = ttk.Combobox(sel_card, values=list(CITIES.keys()), state="readonly")
         self.dest_combo.set(self.dest_city)
         self.dest_combo.grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=5)
         self.dest_combo.bind("<<ComboboxSelected>>", self.on_combo_change)
         
-        ttk.Label(sidebar, text="💡 Links-/Rechtsklick auf Knoten = Start/Ziel\n💡 Straße anklicken zum Bearbeiten", 
-                  style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), foreground=self.fg_muted).grid(row=2, column=0, pady=(0, 10), sticky="w")
-        
         # Options Card
-        opt_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        opt_card.grid(row=3, column=0, sticky="ew", pady=(0, 10))
-        ttk.Label(opt_card, text="Optimierungs-Kriterien", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
+        opt_card = tk.Frame(sidebar, bg=self.bg_card, padx=10, pady=10)
+        opt_card.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        tk.Label(opt_card, text="Optimierungs-Kriterien", bg=self.bg_card, fg=self.color_path, font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
         self.routing_mode = tk.StringVar(value="Fastest")
         modes = [
@@ -330,21 +293,21 @@ class RouteFinderApp:
             ("Flachste Route (Höhenprofil)", "Flat")
         ]
         for i, (text, val) in enumerate(modes):
-            ttk.Radiobutton(opt_card, text=text, variable=self.routing_mode, value=val, command=self.calculate_route, style="TRadiobutton").grid(row=i+1, column=0, columnspan=2, sticky="w", pady=2)
+            tk.Radiobutton(opt_card, text=text, variable=self.routing_mode, value=val, command=self.calculate_route, bg=self.bg_card, fg=self.fg_white, selectcolor=self.bg_sidebar, activebackground=self.bg_card, activeforeground=self.fg_white).grid(row=i+1, column=0, columnspan=2, sticky="w", pady=2)
             
-        ttk.Separator(opt_card, orient="horizontal").grid(row=6, column=0, columnspan=2, sticky="ew", pady=6)
+        tk.Frame(opt_card, height=1, bg=self.bg_sidebar).grid(row=6, column=0, columnspan=2, sticky="ew", pady=6)
         
         self.avoid_vignette_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt_card, text="Vignette vermeiden", variable=self.avoid_vignette_var, command=self.calculate_route, style="TCheckbutton").grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
+        tk.Checkbutton(opt_card, text="Vignette vermeiden", variable=self.avoid_vignette_var, command=self.calculate_route, bg=self.bg_card, fg=self.fg_white, selectcolor=self.bg_sidebar, activebackground=self.bg_card, activeforeground=self.fg_white).grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
         
         self.avoid_traffic_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opt_card, text="Stau / Verkehrsrisiko meiden", variable=self.avoid_traffic_var, command=self.calculate_route, style="TCheckbutton").grid(row=8, column=0, columnspan=2, sticky="w", pady=2)
+        tk.Checkbutton(opt_card, text="Stau / Verkehrsrisiko meiden", variable=self.avoid_traffic_var, command=self.calculate_route, bg=self.bg_card, fg=self.fg_white, selectcolor=self.bg_sidebar, activebackground=self.bg_card, activeforeground=self.fg_white).grid(row=8, column=0, columnspan=2, sticky="w", pady=2)
         
         # Stats Card
-        self.stats_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        self.stats_card.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+        self.stats_card = tk.Frame(sidebar, bg=self.bg_card, padx=10, pady=10)
+        self.stats_card.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         self.stats_card.columnconfigure(1, weight=1)
-        ttk.Label(self.stats_card, text="Routen-Statistik", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
+        tk.Label(self.stats_card, text="Routen-Statistik", bg=self.bg_card, fg=self.color_path, font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
         self.stats_labels = {}
         stat_configs = [
@@ -352,21 +315,23 @@ class RouteFinderApp:
             ("Höhenmeter gesamt:", "elev"), ("Durchschn. Eco-Wert:", "eco"), ("Mautpflichtig:", "toll")
         ]
         for i, (label_text, key) in enumerate(stat_configs):
-            ttk.Label(self.stats_card, text=label_text, style="Card.TLabel").grid(row=i+1, column=0, sticky="w", pady=1)
-            lbl = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
+            tk.Label(self.stats_card, text=label_text, bg=self.bg_card, fg=self.fg_white).grid(row=i+1, column=0, sticky="w", pady=1)
+            lbl = tk.Label(self.stats_card, text="-", bg=self.bg_card, fg=self.fg_white, font=("Segoe UI", 10, "bold"))
             lbl.grid(row=i+1, column=1, sticky="e", pady=1)
             self.stats_labels[key] = lbl
             
-        self.editor_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        self.editor_card.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        # Editor Card
+        self.editor_card = tk.Frame(sidebar, bg=self.bg_card, padx=10, pady=10)
+        self.editor_card.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         self.editor_card.columnconfigure(0, weight=1)
         self.editor_card.grid_remove()
         
-        btn_frame = ttk.Frame(sidebar, style="Sidebar.TFrame")
-        btn_frame.grid(row=6, column=0, pady=(5, 5), sticky="ew")
+        # Controls Frame (Bottom)
+        btn_frame = tk.Frame(sidebar, bg=self.bg_sidebar)
+        btn_frame.grid(row=5, column=0, sticky="ew", pady=(5, 5))
         btn_frame.columnconfigure((0,1), weight=1)
-        ttk.Button(btn_frame, text="Karte zentrieren", command=self.center_map).grid(row=0, column=0, padx=2, sticky="ew")
-        ttk.Button(btn_frame, text="Verkehr zurücksetzen", command=self.reset_all_roads).grid(row=0, column=1, padx=2, sticky="ew")
+        tk.Button(btn_frame, text="Karte zentrieren", command=self.center_map, bg="#4A4E69", fg=self.fg_white, font=("Segoe UI", 9, "bold"), bd=0, height=1).grid(row=0, column=0, padx=2, sticky="ew")
+        tk.Button(btn_frame, text="Verkehr zurücksetzen", command=self.reset_all_roads, bg="#4A4E69", fg=self.fg_white, font=("Segoe UI", 9, "bold"), bd=0, height=1).grid(row=0, column=1, padx=2, sticky="ew")
 
     def draw_graph(self):
         self.canvas.delete("all")
@@ -384,7 +349,7 @@ class RouteFinderApp:
             elif e == self.selected_edge: color, width = "#FFFFFF", 5
             elif is_on_route: color, width = self.color_path, 6
             elif e.has_vignette: color, width = self.color_vignette, 3
-            else: color, width = self.color_normal, 3
+            else: color, width = "#8D99AE", 3
                 
             line_id = self.canvas.create_line(pt_a[0], pt_a[1], pt_b[0], pt_b[1], fill=color, width=width, tags="edge")
             self.edge_by_line_id[line_id] = e
@@ -426,11 +391,11 @@ class RouteFinderApp:
         if left:
             if name == self.dest_city: return messagebox.showwarning("Fehler", "Start und Ziel können nicht gleich sein!")
             self.start_city = name
-            self.start_combo.set(name)
+            if hasattr(self, "start_combo"): self.start_combo.set(name)
         else:
             if name == self.start_city: return messagebox.showwarning("Fehler", "Start und Ziel können nicht gleich sein!")
             self.dest_city = name
-            self.dest_combo.set(name)
+            if hasattr(self, "dest_combo"): self.dest_combo.set(name)
         self.calculate_route()
 
     def on_edge_click(self, event):
@@ -445,24 +410,27 @@ class RouteFinderApp:
         for child in self.editor_card.winfo_children(): child.destroy()
         self.editor_card.grid()
         
-        ttk.Label(self.editor_card, text=f"Straße: {edge.node_a} ↔ {edge.node_b}", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
-        ttk.Label(self.editor_card, text=f"Distanz: {edge.distance} km | Speed: {edge.speed_limit} km/h\nVerbrauch: {edge.fuel_consumption} L | Höhenstufe: {edge.elevation_diff} m\nEco-Wert: {edge.eco_score}/10", style="Card.TLabel", justify="left").grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
+        tk.Label(self.editor_card, text=f"Straße: {edge.node_a} ↔ {edge.node_b}", bg=self.bg_card, fg=self.color_path, font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
+        tk.Label(self.editor_card, text=f"Distanz: {edge.distance} km | Speed: {edge.speed_limit} km/h\nVerbrauch: {edge.fuel_consumption} L | Höhenstufe: {edge.elevation_diff} m\nEco-Wert: {edge.eco_score}/10", bg=self.bg_card, fg=self.fg_white, justify="left").grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
         
         self.edit_vignette_var = tk.BooleanVar(value=edge.has_vignette)
-        ttk.Checkbutton(self.editor_card, text="Maut/Vignette nötig", variable=self.edit_vignette_var, command=self.save_edge_edits, style="TCheckbutton").grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
+        tk.Checkbutton(self.editor_card, text="Maut/Vignette nötig", variable=self.edit_vignette_var, command=self.save_edge_edits, bg=self.bg_card, fg=self.fg_white, selectcolor=self.bg_sidebar, activebackground=self.bg_card, activeforeground=self.fg_white).grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
         
         self.edit_traffic_var = tk.BooleanVar(value=edge.traffic_jam)
-        ttk.Checkbutton(self.editor_card, text="Aktiver Stau", variable=self.edit_traffic_var, command=self.save_edge_edits, style="TCheckbutton").grid(row=3, column=0, columnspan=2, sticky="w", pady=3)
+        tk.Checkbutton(self.editor_card, text="Aktiver Stau", variable=self.edit_traffic_var, command=self.save_edge_edits, bg=self.bg_card, fg=self.fg_white, selectcolor=self.bg_sidebar, activebackground=self.bg_card, activeforeground=self.fg_white).grid(row=3, column=0, columnspan=2, sticky="w", pady=3)
         
-        ttk.Label(self.editor_card, text="Staugefahr (Risiko):", style="Card.TLabel").grid(row=4, column=0, sticky="w", pady=(3, 0))
-        self.lbl_risk_val = ttk.Label(self.editor_card, text=f"{int(edge.traffic_risk * 100)}%", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
+        tk.Label(self.editor_card, text="Staugefahr (Risiko):", bg=self.bg_card, fg=self.fg_white).grid(row=4, column=0, sticky="w", pady=(3, 0))
+        self.lbl_risk_val = tk.Label(self.editor_card, text=f"{int(edge.traffic_risk * 100)}%", bg=self.bg_card, fg=self.fg_white, font=("Segoe UI", 10, "bold"))
         self.lbl_risk_val.grid(row=4, column=1, sticky="e", pady=(3, 0))
         
-        self.edit_risk_slider = ttk.Scale(self.editor_card, from_=0.0, to=1.0, value=edge.traffic_risk, command=self.on_risk_slider_move)
+        self.edit_risk_slider = tk.Scale(self.editor_card, from_=0.0, to=1.0, resolution=0.01, orient="horizontal", bg=self.bg_card, fg=self.fg_white, highlightthickness=0, bd=0, activebackground=self.color_path)
+        self.edit_risk_slider.set(edge.traffic_risk)
         self.edit_risk_slider.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 5))
-        ttk.Button(self.editor_card, text="Schließen", command=self.hide_edge_editor).grid(row=6, column=0, columnspan=2, pady=(5, 0), sticky="ew")
+        self.edit_risk_slider.bind("<ButtonRelease-1>", lambda ev: self.on_risk_slider_release(self.edit_risk_slider.get()))
+        
+        tk.Button(self.editor_card, text="Schließen", command=self.hide_edge_editor, bg="#4A4E69", fg=self.fg_white, font=("Segoe UI", 9, "bold"), bd=0).grid(row=6, column=0, columnspan=2, pady=(5, 0), sticky="ew")
 
-    def on_risk_slider_move(self, val):
+    def on_risk_slider_release(self, val):
         risk = float(val)
         self.lbl_risk_val.configure(text=f"{int(risk * 100)}%")
         if self.selected_edge:
@@ -482,8 +450,7 @@ class RouteFinderApp:
 
     def reset_all_roads(self):
         for edge in EDGES:
-            edge.traffic_jam = False
-            edge.traffic_risk = 0.0
+            edge.traffic_jam, edge.traffic_risk = False, 0.0
         for edge in EDGES:
             if edge.node_a == "Linz" and edge.node_b == "St. Pölten": edge.traffic_risk = 0.3
             elif edge.node_a == "St. Pölten" and edge.node_b == "Wien": edge.traffic_jam = True
@@ -509,14 +476,14 @@ class RouteFinderApp:
             time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
             vigs = any(e.has_vignette for e in self.path_edges)
             
-            self.stats_labels["dist"].configure(text=f"{dist:.1f} km", foreground=self.color_path)
-            self.stats_labels["time"].configure(text=time_str, foreground=self.color_path)
-            self.stats_labels["fuel"].configure(text=f"{fuel:.1f} L", foreground=self.color_path)
-            self.stats_labels["elev"].configure(text=f"{elev} m", foreground=self.color_path)
-            self.stats_labels["eco"].configure(text=f"{eco:.1f}/10", foreground=self.color_path)
-            self.stats_labels["toll"].configure(text="Ja" if vigs else "Nein", foreground=self.color_vignette if vigs else "#06D6A0")
+            self.stats_labels["dist"].configure(text=f"{dist:.1f} km", fg=self.color_path)
+            self.stats_labels["time"].configure(text=time_str, fg=self.color_path)
+            self.stats_labels["fuel"].configure(text=f"{fuel:.1f} L", fg=self.color_path)
+            self.stats_labels["elev"].configure(text=f"{elev} m", fg=self.color_path)
+            self.stats_labels["eco"].configure(text=f"{eco:.1f}/10", fg=self.color_path)
+            self.stats_labels["toll"].configure(text="Ja" if vigs else "Nein", fg=self.color_vignette if vigs else "#06D6A0")
         else:
-            for lbl in self.stats_labels.values(): lbl.configure(text="-", foreground=self.fg_muted)
+            for lbl in self.stats_labels.values(): lbl.configure(text="-", fg=self.fg_muted)
         self.draw_graph()
 
     def center_map(self):
@@ -528,8 +495,6 @@ class RouteFinderApp:
 
     def on_canvas_press(self, event):
         self.canvas.scan_mark(event.x, event.y)
-        self.pan_start_x = event.x
-        self.pan_start_y = event.y
 
     def on_canvas_drag(self, event):
         self.canvas.scan_dragto(event.x, event.y, gain=1)
@@ -548,20 +513,7 @@ class RouteFinderApp:
     def apply_zoom(self):
         self.canvas.configure(scrollregion=(0, 0, int(1000 * self.zoom_factor), int(600 * self.zoom_factor)))
 
-class AppController:
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.withdraw()
-        self.login_win = LoginWindow(self)
-        self.root.mainloop()
-        
-    def login_success(self):
-        self.login_win.root.destroy()
-        self.root.deiconify()
-        self.app = RouteFinderApp(self.root)
-        
-    def shutdown(self):
-        self.root.destroy()
-
 if __name__ == "__main__":
-    controller = AppController()
+    root = tk.Tk()
+    app = RouteFinderApp(root)
+    root.mainloop()
