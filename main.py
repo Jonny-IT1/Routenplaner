@@ -6,7 +6,7 @@ import heapq, os, json, hashlib, shutil
 try:
     import sys
     import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), "Ki"))
+    sys.path.append(os.path.abspath(os.path.dirname(__file__)))
     
     from Ki.app import CITIES_GEO, EDGES, a_star, hash_password, reset_data_directory
     
