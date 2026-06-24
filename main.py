@@ -4,6 +4,8 @@ import heapq
 import os
 import json
 import math
+import hashlib
+import shutil
 
 class Node:
     def __init__(self, name, x, y):
@@ -12,7 +14,7 @@ class Node:
         self.y = y
 
 class Edge:
-    def __init__(self, node_a, node_b, distance_km, speed_limit_kmh, has_vignette=False, traffic_jam=False, traffic_risk=0.0):
+    def __init__(self, node_a, node_b, distance_km, speed_limit_kmh, has_vignette=False, traffic_jam=False, traffic_risk=0.0, elevation_diff=0.0, fuel_consumption=0.0, eco_score=5.0):
         self.node_a = node_a
         self.node_b = node_b
         self.distance = distance_km
@@ -20,8 +22,11 @@ class Edge:
         self.has_vignette = has_vignette
         self.traffic_jam = traffic_jam
         self.traffic_risk = traffic_risk  # 0.0 to 1.0
+        self.elevation_diff = elevation_diff  # in meters
+        self.fuel_consumption = fuel_consumption  # in liters
+        self.eco_score = eco_score  # 1 to 10 (higher is cleaner/greener)
 
-# Predefined graph data representing Austria's highway and road network
+# Predefined graph data representing Austria's highway and road network with advanced weightings
 CITIES = {
     "Bregenz": Node("Bregenz", 80, 300),
     "Innsbruck": Node("Innsbruck", 200, 320),
@@ -40,56 +45,97 @@ CITIES = {
 }
 
 EDGES = [
-    Edge("Bregenz", "Innsbruck", 130, 100, has_vignette=True),
-    Edge("Innsbruck", "Lienz", 180, 80, has_vignette=False),
-    Edge("Innsbruck", "Salzburg", 185, 130, has_vignette=True),
-    Edge("Lienz", "Villach", 110, 80, has_vignette=False),
-    Edge("Salzburg", "Wels", 100, 130, has_vignette=True),
-    Edge("Salzburg", "Liezen", 120, 100, has_vignette=True),
-    Edge("Wels", "Linz", 30, 130, has_vignette=True),
-    Edge("Wels", "Liezen", 80, 100, has_vignette=True),
-    Edge("Liezen", "Graz", 130, 100, has_vignette=True),
-    Edge("Liezen", "Bruck an der Mur", 90, 100, has_vignette=False),
-    Edge("Liezen", "Villach", 130, 100, has_vignette=True),
-    Edge("Villach", "Klagenfurt", 40, 130, has_vignette=True),
-    Edge("Klagenfurt", "Graz", 140, 130, has_vignette=True),
-    Edge("Graz", "Bruck an der Mur", 55, 130, has_vignette=True),
-    Edge("Bruck an der Mur", "St. Pölten", 110, 80, has_vignette=False),
-    Edge("Linz", "St. Pölten", 125, 130, has_vignette=True, traffic_risk=0.3),
-    Edge("St. Pölten", "Wien", 65, 130, has_vignette=True, traffic_jam=True),
-    Edge("Wien", "Eisenstadt", 60, 130, has_vignette=True),
-    Edge("Wien", "Graz", 200, 130, has_vignette=True, traffic_risk=0.15),
-    Edge("Eisenstadt", "Graz", 170, 100, has_vignette=False),
+    Edge("Bregenz", "Innsbruck", 130, 100, has_vignette=True, elevation_diff=1200, fuel_consumption=12.5, eco_score=4),
+    Edge("Innsbruck", "Lienz", 180, 80, has_vignette=False, elevation_diff=1500, fuel_consumption=16.0, eco_score=5),
+    Edge("Innsbruck", "Salzburg", 185, 130, has_vignette=True, elevation_diff=400, fuel_consumption=15.5, eco_score=6),
+    Edge("Lienz", "Villach", 110, 80, has_vignette=False, elevation_diff=300, fuel_consumption=8.5, eco_score=7),
+    Edge("Salzburg", "Wels", 100, 130, has_vignette=True, elevation_diff=200, fuel_consumption=8.2, eco_score=6),
+    Edge("Salzburg", "Liezen", 120, 100, has_vignette=True, elevation_diff=800, fuel_consumption=11.2, eco_score=5),
+    Edge("Wels", "Linz", 30, 130, has_vignette=True, elevation_diff=50, fuel_consumption=2.5, eco_score=7),
+    Edge("Wels", "Liezen", 80, 100, has_vignette=True, elevation_diff=600, fuel_consumption=7.8, eco_score=5),
+    Edge("Liezen", "Graz", 130, 100, has_vignette=True, elevation_diff=500, fuel_consumption=11.5, eco_score=5),
+    Edge("Liezen", "Bruck an der Mur", 90, 100, has_vignette=False, elevation_diff=400, fuel_consumption=8.0, eco_score=6),
+    Edge("Liezen", "Villach", 130, 100, has_vignette=True, elevation_diff=700, fuel_consumption=12.0, eco_score=5),
+    Edge("Villach", "Klagenfurt", 40, 130, has_vignette=True, elevation_diff=100, fuel_consumption=3.2, eco_score=8),
+    Edge("Klagenfurt", "Graz", 140, 130, has_vignette=True, elevation_diff=800, fuel_consumption=13.0, eco_score=5),
+    Edge("Graz", "Bruck an der Mur", 55, 130, has_vignette=True, elevation_diff=150, fuel_consumption=4.8, eco_score=7),
+    Edge("Bruck an der Mur", "St. Pölten", 110, 80, has_vignette=False, elevation_diff=700, fuel_consumption=9.8, eco_score=6),
+    Edge("Linz", "St. Pölten", 125, 130, has_vignette=True, traffic_risk=0.3, elevation_diff=150, fuel_consumption=10.2, eco_score=6),
+    Edge("St. Pölten", "Wien", 65, 130, has_vignette=True, traffic_jam=True, elevation_diff=100, fuel_consumption=5.3, eco_score=6),
+    Edge("Wien", "Eisenstadt", 60, 130, has_vignette=True, elevation_diff=80, fuel_consumption=4.8, eco_score=8),
+    Edge("Wien", "Graz", 200, 130, has_vignette=True, traffic_risk=0.15, elevation_diff=700, fuel_consumption=16.8, eco_score=5),
+    Edge("Eisenstadt", "Graz", 170, 100, has_vignette=False, elevation_diff=500, fuel_consumption=13.5, eco_score=6),
 ]
 
+def hash_password(password, salt):
+    return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
+
+def get_credentials_path():
+    os.makedirs(".venv", exist_ok=True)
+    return os.path.join(".venv", "user_credentials.json")
+
+def reset_data_directory():
+    if os.path.exists("data"):
+        for filename in os.listdir("data"):
+            file_path = os.path.join("data", filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Fehler beim Löschen von {file_path}: {e}")
+        messagebox.showinfo("Erfolg", "Alle Dateien im Ordner 'data/' wurden gelöscht!")
+    else:
+        messagebox.showinfo("Information", "Der Ordner 'data/' existiert nicht oder ist bereits leer.")
+
 def calculate_cost(edge, mode, avoid_vignette, avoid_traffic):
+    # Calculate base cost based on mode
     if mode == "Shortest":
         cost = edge.distance
-        if avoid_vignette and edge.has_vignette:
-            cost += 500.0  # Large virtual penalty
-        if avoid_traffic:
-            traffic_penalty = 0.0
-            if edge.traffic_jam:
-                traffic_penalty += 150.0
-            traffic_penalty += edge.traffic_risk * 75.0
-            cost += traffic_penalty
-        return cost
-    else:  # Fastest
-        base_time = edge.distance / edge.speed_limit
+    elif mode == "Fastest":
+        cost = edge.distance / edge.speed_limit
+        # Apply traffic delays to time
         traffic_mult = 1.0
         if edge.traffic_jam:
-            traffic_mult += 2.0  # Triples time if active traffic jam
+            traffic_mult += 2.0  # Triples transit time
         if avoid_traffic:
             traffic_mult += edge.traffic_risk * 1.5
-            
-        time = base_time * traffic_mult
+        cost *= traffic_mult
+    elif mode == "Fuel":
+        cost = edge.fuel_consumption
+    elif mode == "Eco":
+        # Lower eco_score means less friendly, so we penalize it
+        cost = (11 - edge.eco_score) * edge.distance
+    elif mode == "Flat":
+        cost = edge.elevation_diff
+    else:
+        cost = edge.distance
         
-        if avoid_vignette and edge.has_vignette:
-            time += 5.0  # Add 5 hours virtual penalty
-        return time
+    # Apply Vignette avoidance penalty
+    if avoid_vignette and edge.has_vignette:
+        if mode == "Shortest":
+            cost += 500.0
+        elif mode == "Fastest":
+            cost += 5.0  # 5 hours virtual penalty
+        elif mode == "Fuel":
+            cost += 50.0  # 50 liters virtual penalty
+        elif mode == "Eco":
+            cost += 5000.0
+        elif mode == "Flat":
+            cost += 2000.0
+            
+    # Apply Traffic avoidance penalties to other modes
+    if avoid_traffic and mode != "Fastest":
+        traffic_penalty = 0.0
+        if edge.traffic_jam:
+            traffic_penalty += 150.0
+        traffic_penalty += edge.traffic_risk * 75.0
+        cost += traffic_penalty
+        
+    return cost
 
 def dijkstra(start_name, end_name, mode="Fastest", avoid_vignette=False, avoid_traffic=False):
-    # Build adjacency list
     adj = {name: [] for name in CITIES}
     for edge in EDGES:
         cost = calculate_cost(edge, mode, avoid_vignette, avoid_traffic)
@@ -119,7 +165,6 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
     os.makedirs("data", exist_ok=True)
     
     if not path_nodes:
-        # Save empty/no route state
         no_route_data = {
             "start": start,
             "destination": dest,
@@ -136,6 +181,9 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
 
     total_dist = sum(edge.distance for edge in path_edges)
     actual_time_hours = 0.0
+    total_fuel = sum(edge.fuel_consumption for edge in path_edges)
+    total_elevation = sum(edge.elevation_diff for edge in path_edges)
+    avg_eco = sum(edge.eco_score for edge in path_edges) / len(path_edges) if path_edges else 0
     vignette_count = 0
     traffic_jams_count = 0
     
@@ -157,17 +205,29 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
         
     time_str = f"{hours} Std. {minutes} Min." if hours > 0 else f"{minutes} Min."
     
+    mode_names = {
+        "Fastest": "Schnellste Route (Zeit)",
+        "Shortest": "Kürzeste Route (Strecke)",
+        "Fuel": "Kraftstoffsparend (Verbrauch)",
+        "Eco": "Umweltschonend (Eco-Score)",
+        "Flat": "Flachste Route (Höhenmeter)"
+    }
+    
     # Save JSON file
     data_json = {
         "start": start,
         "destination": dest,
         "mode": mode,
+        "mode_name": mode_names.get(mode, mode),
         "avoid_vignette": avoid_vignette,
         "avoid_traffic": avoid_traffic,
         "path_found": True,
         "total_distance_km": total_dist,
         "actual_time_hours": actual_time_hours,
         "actual_time_formatted": time_str,
+        "total_fuel_liters": round(total_fuel, 1),
+        "total_elevation_gain_m": total_elevation,
+        "average_eco_score": round(avg_eco, 1),
         "vignette_needed": vignette_count > 0,
         "vignette_roads_count": vignette_count,
         "traffic_jams_encountered": traffic_jams_count,
@@ -180,7 +240,10 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
                 "speed_limit_kmh": edge.speed_limit,
                 "vignette": edge.has_vignette,
                 "traffic_jam": edge.traffic_jam,
-                "traffic_risk": edge.traffic_risk
+                "traffic_risk": edge.traffic_risk,
+                "elevation_diff_m": edge.elevation_diff,
+                "fuel_consumption_l": edge.fuel_consumption,
+                "eco_score": edge.eco_score
             }
             for i, edge in enumerate(path_edges)
         ]
@@ -194,17 +257,20 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
         f.write("==================================================\n")
         f.write("               ROUTENBERECHNUNG                   \n")
         f.write("==================================================\n")
-        f.write(f"Startpunkt:       {start}\n")
-        f.write(f"Zielpunkt:        {dest}\n")
-        f.write(f"Optimierung:      {'Schnellste Route' if mode == 'Fastest' else 'Kürzeste Route'}\n")
-        f.write(f"Vignette meiden:  {'Ja' if avoid_vignette else 'Nein'}\n")
-        f.write(f"Stau meiden:      {'Ja' if avoid_traffic else 'Nein'}\n")
+        f.write(f"Startpunkt:         {start}\n")
+        f.write(f"Zielpunkt:          {dest}\n")
+        f.write(f"Optimierung:        {mode_names.get(mode, mode)}\n")
+        f.write(f"Vignette meiden:    {'Ja' if avoid_vignette else 'Nein'}\n")
+        f.write(f"Stau meiden:        {'Ja' if avoid_traffic else 'Nein'}\n")
         f.write("--------------------------------------------------\n")
-        f.write(f"Wegstrecke:       {' -> '.join(path_nodes)}\n")
-        f.write(f"Gesamtdistanz:    {total_dist:.1f} km\n")
-        f.write(f"Reisezeit:        {time_str}\n")
-        f.write(f"Maut/Vignette:    {'Ja' if vignette_count > 0 else 'Nein'} ({vignette_count} Abschnitt(e))\n")
-        f.write(f"Staus auf Route:  {traffic_jams_count}\n")
+        f.write(f"Wegstrecke:         {' -> '.join(path_nodes)}\n")
+        f.write(f"Gesamtdistanz:      {total_dist:.1f} km\n")
+        f.write(f"Reisezeit:          {time_str}\n")
+        f.write(f"Kraftstoffbedarf:   {total_fuel:.1f} Liter\n")
+        f.write(f"Höhenmeter gesamt:  {total_elevation} Meter\n")
+        f.write(f"Durchschn. Eco:     {avg_eco:.1f}/10\n")
+        f.write(f"Maut/Vignette:      {'Ja' if vignette_count > 0 else 'Nein'} ({vignette_count} Abschnitt(e))\n")
+        f.write(f"Staus auf Route:    {traffic_jams_count}\n")
         f.write("--------------------------------------------------\n")
         f.write("Wegbeschreibung:\n")
         for i, edge in enumerate(path_edges):
@@ -216,15 +282,133 @@ def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_n
             leg_m = int(round(leg_t * 60))
             v_info = " [Vignette]" if edge.has_vignette else ""
             t_info = " [STAU!]" if edge.traffic_jam else ""
-            f.write(f"  * {from_n} -> {to_n}: {edge.distance} km, ca. {leg_m} Min. ({edge.speed_limit} km/h){v_info}{t_info}\n")
+            f.write(f"  * {from_n} -> {to_n}: {edge.distance} km, ca. {leg_m} Min. ({edge.speed_limit} km/h), +{edge.elevation_diff}m, {edge.fuel_consumption}L, Eco: {edge.eco_score}/10{v_info}{t_info}\n")
         f.write("==================================================\n")
+
+class LoginWindow:
+    def __init__(self, controller):
+        self.controller = controller
+        self.root = tk.Toplevel()
+        self.root.title("Antigravity - Anmeldung")
+        self.root.geometry("400x380")
+        self.root.resizable(False, False)
+        
+        # Style references
+        self.bg_dark = "#1E1E24"
+        self.bg_card = "#2B2D42"
+        self.fg_white = "#EDF2F4"
+        
+        self.root.configure(bg=self.bg_dark)
+        
+        # Intercept close button
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+        self.create_widgets()
+        
+    def create_widgets(self):
+        # Title
+        tk.Label(self.root, text="Benutzeranmeldung", bg=self.bg_dark, fg="#06D6A0", font=("Segoe UI", 16, "bold")).pack(pady=(20, 20))
+        
+        # Card Form
+        form_frame = tk.Frame(self.root, bg=self.bg_card, bd=1, relief="flat", padx=20, pady=20)
+        form_frame.pack(padx=20, fill="x")
+        
+        tk.Label(form_frame, text="Benutzername:", bg=self.bg_card, fg=self.fg_white, font=("Segoe UI", 10)).grid(row=0, column=0, sticky="w", pady=5)
+        self.ent_username = tk.Entry(form_frame, bg="#3F4257", fg=self.fg_white, insertbackground=self.fg_white, bd=0, font=("Segoe UI", 10))
+        self.ent_username.grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=5)
+        self.ent_username.focus()
+        
+        tk.Label(form_frame, text="Passwort:", bg=self.bg_card, fg=self.fg_white, font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w", pady=5)
+        self.ent_password = tk.Entry(form_frame, show="*", bg="#3F4257", fg=self.fg_white, insertbackground=self.fg_white, bd=0, font=("Segoe UI", 10))
+        self.ent_password.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=5)
+        
+        form_frame.columnconfigure(1, weight=1)
+        
+        # Buttons Frame
+        btn_frame = tk.Frame(self.root, bg=self.bg_dark)
+        btn_frame.pack(pady=15, fill="x", padx=20)
+        
+        btn_login = tk.Button(btn_frame, text="Anmelden", command=self.handle_login, bg="#06D6A0", fg=self.bg_dark, activebackground="#05b88a", font=("Segoe UI", 10, "bold"), bd=0, height=1, width=12)
+        btn_login.pack(side="left", padx=5, expand=True, fill="x")
+        
+        btn_reg = tk.Button(btn_frame, text="Registrieren", command=self.handle_register, bg="#4A4E69", fg=self.fg_white, activebackground="#5a5e7d", font=("Segoe UI", 10, "bold"), bd=0, height=1, width=12)
+        btn_reg.pack(side="right", padx=5, expand=True, fill="x")
+        
+        # Separator line
+        sep = tk.Frame(self.root, height=1, bg="#3F4257")
+        sep.pack(fill="x", padx=20, pady=10)
+        
+        # Reset Button at the bottom
+        btn_reset = tk.Button(self.root, text="Daten zurücksetzen (data/ Ordner leeren)", command=reset_data_directory, bg="#EF233C", fg=self.fg_white, activebackground="#ff4d5a", font=("Segoe UI", 9, "bold"), bd=0, height=1)
+        btn_reset.pack(fill="x", padx=25, pady=5)
+        
+    def handle_login(self):
+        user = self.ent_username.get().strip()
+        pwd = self.ent_password.get()
+        
+        if not user or not pwd:
+            messagebox.showerror("Fehler", "Bitte füllen Sie alle Felder aus!")
+            return
+            
+        cred_path = get_credentials_path()
+        if not os.path.exists(cred_path):
+            messagebox.showerror("Fehler", "Keine registrierten Benutzer gefunden! Bitte zuerst registrieren.")
+            return
+            
+        with open(cred_path, "r", encoding="utf-8") as f:
+            credentials = json.load(f)
+            
+        if user in credentials:
+            hashed_input = hash_password(pwd, user)
+            if credentials[user] == hashed_input:
+                self.controller.login_success()
+            else:
+                messagebox.showerror("Fehler", "Falsches Passwort!")
+        else:
+            messagebox.showerror("Fehler", "Benutzer existiert nicht!")
+
+    def handle_register(self):
+        user = self.ent_username.get().strip()
+        pwd = self.ent_password.get()
+        
+        if not user or not pwd:
+            messagebox.showerror("Fehler", "Bitte füllen Sie alle Felder aus!")
+            return
+            
+        if len(user) < 3:
+            messagebox.showerror("Fehler", "Der Benutzername muss mindestens 3 Zeichen lang sein!")
+            return
+            
+        if len(pwd) < 4:
+            messagebox.showerror("Fehler", "Das Passwort muss mindestens 4 Zeichen lang sein!")
+            return
+            
+        cred_path = get_credentials_path()
+        credentials = {}
+        if os.path.exists(cred_path):
+            with open(cred_path, "r", encoding="utf-8") as f:
+                credentials = json.load(f)
+                
+        if user in credentials:
+            messagebox.showerror("Fehler", "Dieser Benutzername ist bereits vergeben!")
+            return
+            
+        # Hash and save
+        credentials[user] = hash_password(pwd, user)
+        with open(cred_path, "w", encoding="utf-8") as f:
+            json.dump(credentials, f, indent=4)
+            
+        messagebox.showinfo("Erfolg", f"Benutzer '{user}' wurde erfolgreich registriert!")
+        
+    def on_close(self):
+        self.controller.shutdown()
 
 class RouteFinderApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Antigravity Route Finder")
-        self.root.geometry("1200x800")
-        self.root.minsize(1000, 650)
+        self.root.geometry("1200x850")
+        self.root.minsize(1050, 700)
         
         # Application state
         self.start_city = "Wien"
@@ -326,18 +510,18 @@ class RouteFinderApp:
         self.canvas.bind("<Button-5>", self.on_canvas_zoom)  # Linux scroll down
         
         # Sidebar Frame (Right)
-        sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", padding=15, width=360)
+        sidebar = ttk.Frame(self.root, style="Sidebar.TFrame", padding=15, width=370)
         sidebar.grid(row=0, column=1, sticky="nsew")
         sidebar.grid_propagate(False)
         sidebar.columnconfigure(0, weight=1)
         
         # Title
         title_label = ttk.Label(sidebar, text="Österreich Routenplaner", style="Title.TLabel")
-        title_label.grid(row=0, column=0, pady=(0, 15), sticky="w")
+        title_label.grid(row=0, column=0, pady=(0, 10), sticky="w")
         
         # Card 1: Start/Dest Selection
         sel_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        sel_card.grid(row=1, column=0, fill="x", pady=(0, 15))
+        sel_card.grid(row=1, column=0, fill="x", pady=(0, 10))
         sel_card.columnconfigure(1, weight=1)
         
         ttk.Label(sel_card, text="Start & Ziel", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
@@ -355,65 +539,71 @@ class RouteFinderApp:
         self.dest_combo.bind("<<ComboboxSelected>>", self.on_combo_change)
         
         # Tip label
-        tip_lbl = ttk.Label(sidebar, text="💡 Linksklick = Start | Rechtsklick = Ziel\n💡 Straße anklicken zum Bearbeiten", 
+        tip_lbl = ttk.Label(sidebar, text="💡 Links-/Rechtsklick auf Knoten = Start/Ziel\n💡 Straße anklicken zum Bearbeiten", 
                             style="Sidebar.TLabel", font=("Segoe UI", 9, "italic"), foreground=self.fg_muted)
-        tip_lbl.grid(row=2, column=0, pady=(0, 15), sticky="w")
+        tip_lbl.grid(row=2, column=0, pady=(0, 10), sticky="w")
         
         # Card 2: Routing preferences
         opt_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        opt_card.grid(row=3, column=0, fill="x", pady=(0, 15))
+        opt_card.grid(row=3, column=0, fill="x", pady=(0, 10))
         
-        ttk.Label(opt_card, text="Routen-Optionen", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
+        ttk.Label(opt_card, text="Optimierungs-Kriterien", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
         self.routing_mode = tk.StringVar(value="Fastest")
-        ttk.Radiobutton(opt_card, text="Schnellste Route (Zeit)", variable=self.routing_mode, value="Fastest", command=self.calculate_route, style="TRadiobutton").grid(row=1, column=0, columnspan=2, sticky="w", pady=3)
-        ttk.Radiobutton(opt_card, text="Kürzeste Route (Strecke)", variable=self.routing_mode, value="Shortest", command=self.calculate_route, style="TRadiobutton").grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
+        ttk.Radiobutton(opt_card, text="Schnellste Route (Reisezeit)", variable=self.routing_mode, value="Fastest", command=self.calculate_route, style="TRadiobutton").grid(row=1, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Radiobutton(opt_card, text="Kürzeste Route (Strecke)", variable=self.routing_mode, value="Shortest", command=self.calculate_route, style="TRadiobutton").grid(row=2, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Radiobutton(opt_card, text="Kraftstoffsparend (Verbrauch)", variable=self.routing_mode, value="Fuel", command=self.calculate_route, style="TRadiobutton").grid(row=3, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Radiobutton(opt_card, text="Umweltschonend (Eco-Score)", variable=self.routing_mode, value="Eco", command=self.calculate_route, style="TRadiobutton").grid(row=4, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Radiobutton(opt_card, text="Flachste Route (Höhenprofil)", variable=self.routing_mode, value="Flat", command=self.calculate_route, style="TRadiobutton").grid(row=5, column=0, columnspan=2, sticky="w", pady=2)
         
-        ttk.Separator(opt_card, orient="horizontal").grid(row=3, column=0, columnspan=2, fill="x", pady=8)
+        ttk.Separator(opt_card, orient="horizontal").grid(row=6, column=0, columnspan=2, fill="x", pady=6)
         
         self.avoid_vignette_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(opt_card, text="Vignette vermeiden", variable=self.avoid_vignette_var, command=self.calculate_route, style="TCheckbutton").grid(row=4, column=0, columnspan=2, sticky="w", pady=3)
+        ttk.Checkbutton(opt_card, text="Vignette vermeiden", variable=self.avoid_vignette_var, command=self.calculate_route, style="TCheckbutton").grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
         
         self.avoid_traffic_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(opt_card, text="Stau / Verkehrsrisiko meiden", variable=self.avoid_traffic_var, command=self.calculate_route, style="TCheckbutton").grid(row=5, column=0, columnspan=2, sticky="w", pady=3)
+        ttk.Checkbutton(opt_card, text="Stau / Verkehrsrisiko meiden", variable=self.avoid_traffic_var, command=self.calculate_route, style="TCheckbutton").grid(row=8, column=0, columnspan=2, sticky="w", pady=2)
         
         # Card 3: Route details
         self.stats_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        self.stats_card.grid(row=4, column=0, fill="x", pady=(0, 15))
+        self.stats_card.grid(row=4, column=0, fill="x", pady=(0, 10))
         self.stats_card.columnconfigure(1, weight=1)
         
-        ttk.Label(self.stats_card, text="Routen-Statistik", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
+        ttk.Label(self.stats_card, text="Routen-Statistik", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
-        ttk.Label(self.stats_card, text="Distanz:", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Label(self.stats_card, text="Distanz:", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=1)
         self.lbl_dist = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
-        self.lbl_dist.grid(row=1, column=1, sticky="e", pady=2)
+        self.lbl_dist.grid(row=1, column=1, sticky="e", pady=1)
         
-        ttk.Label(self.stats_card, text="Reisezeit:", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Label(self.stats_card, text="Reisezeit:", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=1)
         self.lbl_time = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
-        self.lbl_time.grid(row=2, column=1, sticky="e", pady=2)
+        self.lbl_time.grid(row=2, column=1, sticky="e", pady=1)
         
-        ttk.Label(self.stats_card, text="Mautpflichtig:", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Label(self.stats_card, text="Treibstoffbedarf:", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=1)
+        self.lbl_fuel = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
+        self.lbl_fuel.grid(row=3, column=1, sticky="e", pady=1)
+        
+        ttk.Label(self.stats_card, text="Höhenmeter gesamt:", style="Card.TLabel").grid(row=4, column=0, sticky="w", pady=1)
+        self.lbl_elev = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
+        self.lbl_elev.grid(row=4, column=1, sticky="e", pady=1)
+        
+        ttk.Label(self.stats_card, text="Durchschn. Eco-Wert:", style="Card.TLabel").grid(row=5, column=0, sticky="w", pady=1)
+        self.lbl_eco = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
+        self.lbl_eco.grid(row=5, column=1, sticky="e", pady=1)
+        
+        ttk.Label(self.stats_card, text="Mautpflichtig:", style="Card.TLabel").grid(row=6, column=0, sticky="w", pady=1)
         self.lbl_toll = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
-        self.lbl_toll.grid(row=3, column=1, sticky="e", pady=2)
-        
-        ttk.Label(self.stats_card, text="Staus auf Route:", style="Card.TLabel").grid(row=4, column=0, sticky="w", pady=2)
-        self.lbl_jams = ttk.Label(self.stats_card, text="-", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
-        self.lbl_jams.grid(row=4, column=1, sticky="e", pady=2)
+        self.lbl_toll.grid(row=6, column=1, sticky="e", pady=1)
         
         # Card 4: Interactive Road Editor
         self.editor_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        self.editor_card.grid(row=5, column=0, fill="x", pady=(0, 15))
+        self.editor_card.grid(row=5, column=0, fill="x", pady=(0, 10))
         self.editor_card.columnconfigure(0, weight=1)
         self.editor_card.grid_remove()  # Hidden by default
         
-        # Legend (At the bottom)
-        legend_frame = ttk.Frame(sidebar, style="Sidebar.TFrame")
-        legend_frame.grid(row=6, column=0, fill="x", sticky="ew", pady=(10, 0))
-        legend_frame.columnconfigure((0,1,2), weight=1)
-        
-        # Map center and reset buttons
+        # Map center and reset buttons (At the bottom)
         btn_frame = ttk.Frame(sidebar, style="Sidebar.TFrame")
-        btn_frame.grid(row=7, column=0, fill="x", pady=(0, 10), sticky="ew")
+        btn_frame.grid(row=6, column=0, fill="x", pady=(5, 5), sticky="ew")
         btn_frame.columnconfigure((0,1), weight=1)
         
         ttk.Button(btn_frame, text="Karte zentrieren", command=self.center_map).grid(row=0, column=0, padx=2, sticky="ew")
@@ -430,7 +620,6 @@ class RouteFinderApp:
         for y in range(0, 1000, 80):
             self.canvas.create_line(0, y, 1500, y, fill="#252530", width=1, tags="grid")
             
-        # Compile edges on current route for highlight checks
         route_edges_set = set()
         if self.path_edges:
             for edge in self.path_edges:
@@ -441,7 +630,6 @@ class RouteFinderApp:
             node_a = CITIES[edge.node_a]
             node_b = CITIES[edge.node_b]
             
-            # Determine styling based on state
             is_on_route = edge in route_edges_set
             
             # Base color
@@ -461,37 +649,35 @@ class RouteFinderApp:
                 color = self.color_normal
                 width = 3
                 
-            # Draw line
             line_id = self.canvas.create_line(node_a.x, node_a.y, node_b.x, node_b.y, fill=color, width=width, tags="edge")
             self.edge_by_line_id[line_id] = edge
             
-            # Additional visual indicators
+            # Additional visual overlays
             if edge.has_vignette and not is_on_route and not edge.traffic_jam and edge != self.selected_edge:
-                # Dashed overlay for vignette highways
+                # Dashed overlay for vignette
                 self.canvas.create_line(node_a.x, node_a.y, node_b.x, node_b.y, fill="#FFFFFF", width=1, dash=(3, 5), tags="edge_overlay")
                 
             if edge.traffic_risk > 0.0 and not edge.traffic_jam:
-                # Draw risk outline dots next to the road
+                # Risk dot
                 mid_x = (node_a.x + node_b.x) / 2
                 mid_y = (node_a.y + node_b.y) / 2
-                # Tiny yellow triangle/dot in middle
                 self.canvas.create_oval(mid_x-4, mid_y-4, mid_x+4, mid_y+4, fill="#E6C229", outline="", tags="risk_dot")
                 
-            # Write distance text in the middle
+            # Distance / Stats text in the middle
             mid_x = (node_a.x + node_b.x) / 2
             mid_y = (node_a.y + node_b.y) / 2
-            # Angle of text
+            
             dx = node_b.x - node_a.x
             dy = node_b.y - node_a.y
             angle = math.degrees(math.atan2(dy, dx))
             if angle > 90: angle -= 180
             elif angle < -90: angle += 180
             
-            self.canvas.create_text(mid_x, mid_y - 8, text=f"{edge.distance} km", fill=self.fg_muted, font=("Segoe UI", 8), tags="text")
+            lbl_txt = f"{edge.distance}km / {edge.elevation_diff}m"
+            self.canvas.create_text(mid_x, mid_y - 8, text=lbl_txt, fill=self.fg_muted, font=("Segoe UI", 7), tags="text")
 
         # 2. Draw Nodes (Cities)
         for name, node in CITIES.items():
-            # Determine color
             if name == self.start_city:
                 fill_color = self.color_start
                 radius = 12
@@ -516,13 +702,11 @@ class RouteFinderApp:
             label_y = node.y - radius - 8
             self.canvas.create_text(node.x, label_y, text=name, fill=self.fg_white, font=("Segoe UI", 10, "bold"), tags="text")
 
-        # Bind clicks on nodes
         self.canvas.tag_bind("node", "<Button-1>", self.on_node_left_click)
         self.canvas.tag_bind("node", "<Button-3>", self.on_node_right_click)
         self.canvas.tag_bind("node", "<Double-Button-1>", self.on_node_double_click)
         self.canvas.tag_bind("edge", "<Button-1>", self.on_edge_click)
         
-        # Apply scaling zoom factor
         self.apply_zoom()
 
     def on_combo_change(self, event):
@@ -571,38 +755,38 @@ class RouteFinderApp:
             self.show_edge_editor(edge)
 
     def show_edge_editor(self, edge):
-        # Clear previous editor contents
         for child in self.editor_card.winfo_children():
             child.destroy()
             
         self.editor_card.grid()  # Show the card
         
-        ttk.Label(self.editor_card, text=f"Straße: {edge.node_a} ↔ {edge.node_b}", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
+        ttk.Label(self.editor_card, text=f"Straße: {edge.node_a} ↔ {edge.node_b}", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
-        # Info details
-        ttk.Label(self.editor_card, text=f"Distanz: {edge.distance} km", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=2)
-        ttk.Label(self.editor_card, text=f"Tempolimit: {edge.speed_limit} km/h", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=2)
+        # Details
+        ttk.Label(self.editor_card, text=f"Distanz: {edge.distance} km | Speed: {edge.speed_limit} km/h", style="Card.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", pady=1)
+        ttk.Label(self.editor_card, text=f"Verbrauch: {edge.fuel_consumption} L | Höhenstufe: {edge.elevation_diff} m", style="Card.TLabel").grid(row=2, column=0, columnspan=2, sticky="w", pady=1)
+        ttk.Label(self.editor_card, text=f"Eco-Wert: {edge.eco_score}/10", style="Card.TLabel").grid(row=3, column=0, columnspan=2, sticky="w", pady=1)
         
         # Vignette toggle
         self.edit_vignette_var = tk.BooleanVar(value=edge.has_vignette)
         chk_vig = ttk.Checkbutton(self.editor_card, text="Maut/Vignette nötig", variable=self.edit_vignette_var, command=self.save_edge_edits, style="TCheckbutton")
-        chk_vig.grid(row=3, column=0, columnspan=2, sticky="w", pady=5)
+        chk_vig.grid(row=4, column=0, columnspan=2, sticky="w", pady=3)
         
         # Traffic jam toggle
         self.edit_traffic_var = tk.BooleanVar(value=edge.traffic_jam)
         chk_traf = ttk.Checkbutton(self.editor_card, text="Aktiver Stau", variable=self.edit_traffic_var, command=self.save_edge_edits, style="TCheckbutton")
-        chk_traf.grid(row=4, column=0, columnspan=2, sticky="w", pady=5)
+        chk_traf.grid(row=5, column=0, columnspan=2, sticky="w", pady=3)
         
         # Traffic risk slider
-        ttk.Label(self.editor_card, text="Staugefahr (Risiko):", style="Card.TLabel").grid(row=5, column=0, sticky="w", pady=(5, 0))
+        ttk.Label(self.editor_card, text="Staugefahr (Risiko):", style="Card.TLabel").grid(row=6, column=0, sticky="w", pady=(3, 0))
         self.lbl_risk_val = ttk.Label(self.editor_card, text=f"{int(edge.traffic_risk * 100)}%", style="Card.TLabel", font=("Segoe UI", 10, "bold"))
-        self.lbl_risk_val.grid(row=5, column=1, sticky="e", pady=(5, 0))
+        self.lbl_risk_val.grid(row=6, column=1, sticky="e", pady=(3, 0))
         
         self.edit_risk_slider = ttk.Scale(self.editor_card, from_=0.0, to=1.0, value=edge.traffic_risk, command=self.on_risk_slider_move)
-        self.edit_risk_slider.grid(row=6, column=0, columnspan=2, fill="x", pady=(0, 5))
+        self.edit_risk_slider.grid(row=7, column=0, columnspan=2, fill="x", pady=(0, 5))
         
         btn_close = ttk.Button(self.editor_card, text="Schließen", command=self.hide_edge_editor)
-        btn_close.grid(row=7, column=0, columnspan=2, pady=(10, 0), sticky="ew")
+        btn_close.grid(row=8, column=0, columnspan=2, pady=(5, 0), sticky="ew")
 
     def on_risk_slider_move(self, val):
         risk = float(val)
@@ -623,12 +807,10 @@ class RouteFinderApp:
         self.draw_graph()
 
     def reset_all_roads(self):
-        # Reset traffic jams and risks to default
         for edge in EDGES:
             edge.traffic_jam = False
             edge.traffic_risk = 0.0
             
-        # Re-apply defaults for specific routes
         for edge in EDGES:
             if edge.node_a == "Linz" and edge.node_b == "St. Pölten":
                 edge.traffic_risk = 0.3
@@ -657,14 +839,24 @@ class RouteFinderApp:
         
         # Update UI Stats Card
         if self.path_nodes:
-            # Distance
             total_dist = sum(edge.distance for edge in self.path_edges)
             self.lbl_dist.configure(text=f"{total_dist:.1f} km", foreground=self.color_path)
             
-            # Time
+            # Fuel
+            total_fuel = sum(edge.fuel_consumption for edge in self.path_edges)
+            self.lbl_fuel.configure(text=f"{total_fuel:.1f} L", foreground=self.color_path)
+            
+            # Elevation
+            total_elevation = sum(edge.elevation_diff for edge in self.path_edges)
+            self.lbl_elev.configure(text=f"{total_elevation} m", foreground=self.color_path)
+            
+            # Eco
+            avg_eco = sum(edge.eco_score for edge in self.path_edges) / len(self.path_edges) if self.path_edges else 0
+            self.lbl_eco.configure(text=f"{avg_eco:.1f}/10", foreground=self.color_path)
+            
+            # Time calculation
             actual_time_hours = 0.0
             vignette_needed = False
-            traffic_jams_count = 0
             
             for edge in self.path_edges:
                 leg_time = edge.distance / edge.speed_limit
@@ -673,8 +865,6 @@ class RouteFinderApp:
                 actual_time_hours += leg_time
                 if edge.has_vignette:
                     vignette_needed = True
-                if edge.traffic_jam:
-                    traffic_jams_count += 1
                     
             hours = int(actual_time_hours)
             minutes = int(round((actual_time_hours - hours) * 60))
@@ -685,26 +875,20 @@ class RouteFinderApp:
             time_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
             self.lbl_time.configure(text=time_str, foreground=self.color_path)
             
-            # Toll/Vignette
             if vignette_needed:
                 self.lbl_toll.configure(text="Ja", foreground=self.color_vignette)
             else:
                 self.lbl_toll.configure(text="Nein", foreground="#06D6A0")
-                
-            # Traffic jams
-            if traffic_jams_count > 0:
-                self.lbl_jams.configure(text=f"{traffic_jams_count} Stau(s)", foreground=self.color_traffic)
-            else:
-                self.lbl_jams.configure(text="Freie Fahrt", foreground="#06D6A0")
         else:
             self.lbl_dist.configure(text="-", foreground=self.fg_muted)
             self.lbl_time.configure(text="-", foreground=self.fg_muted)
+            self.lbl_fuel.configure(text="-", foreground=self.fg_muted)
+            self.lbl_elev.configure(text="-", foreground=self.fg_muted)
+            self.lbl_eco.configure(text="-", foreground=self.fg_muted)
             self.lbl_toll.configure(text="-", foreground=self.fg_muted)
-            self.lbl_jams.configure(text="-", foreground=self.fg_muted)
             
         self.draw_graph()
 
-    # Panning & Zooming Handlers
     def center_map(self):
         self.zoom_factor = 1.0
         self.canvas.xview_moveto(0.0)
@@ -713,17 +897,14 @@ class RouteFinderApp:
         self.draw_graph()
 
     def on_canvas_press(self, event):
-        # Record mouse positions for drag scroll
         self.canvas.scan_mark(event.x, event.y)
         self.pan_start_x = event.x
         self.pan_start_y = event.y
 
     def on_canvas_drag(self, event):
-        # Built-in Tkinter drag scroll
         self.canvas.scan_dragto(event.x, event.y, gain=1)
 
     def on_canvas_zoom(self, event):
-        # Calculate scale factor
         if event.num == 4 or event.delta > 0:  # Zoom In
             factor = 1.1
             self.zoom_factor *= 1.1
@@ -733,7 +914,6 @@ class RouteFinderApp:
         else:
             return
             
-        # Restrict zoom boundaries
         if self.zoom_factor < 0.5:
             self.zoom_factor = 0.5
             return
@@ -747,11 +927,23 @@ class RouteFinderApp:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def apply_zoom(self):
-        # We handle scaling by multiplying coords directly or using canvas scale
-        # Since we redraw the whole graph from scratch coordinates, we apply the zoom factor:
         self.canvas.configure(scrollregion=(0, 0, int(1000 * self.zoom_factor), int(600 * self.zoom_factor)))
 
+class AppController:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.withdraw()  # Hide main window at startup
+        
+        self.login_win = LoginWindow(self)
+        self.root.mainloop()
+        
+    def login_success(self):
+        self.login_win.root.destroy()
+        self.root.deiconify()  # Show main window
+        self.app = RouteFinderApp(self.root)
+        
+    def shutdown(self):
+        self.root.destroy()
+
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = RouteFinderApp(root)
-    root.mainloop()
+    controller = AppController()
