@@ -297,7 +297,7 @@ class RouteFinderApp:
         
         # Start/Ziel Card
         sel_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        sel_card.grid(row=1, column=0, fill="x", pady=(0, 10))
+        sel_card.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         sel_card.columnconfigure(1, weight=1)
         ttk.Label(sel_card, text="Start & Ziel", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 8), sticky="w")
         
@@ -318,7 +318,7 @@ class RouteFinderApp:
         
         # Options Card
         opt_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        opt_card.grid(row=3, column=0, fill="x", pady=(0, 10))
+        opt_card.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         ttk.Label(opt_card, text="Optimierungs-Kriterien", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
         self.routing_mode = tk.StringVar(value="Fastest")
@@ -332,7 +332,7 @@ class RouteFinderApp:
         for i, (text, val) in enumerate(modes):
             ttk.Radiobutton(opt_card, text=text, variable=self.routing_mode, value=val, command=self.calculate_route, style="TRadiobutton").grid(row=i+1, column=0, columnspan=2, sticky="w", pady=2)
             
-        ttk.Separator(opt_card, orient="horizontal").grid(row=6, column=0, columnspan=2, fill="x", pady=6)
+        ttk.Separator(opt_card, orient="horizontal").grid(row=6, column=0, columnspan=2, sticky="ew", pady=6)
         
         self.avoid_vignette_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(opt_card, text="Vignette vermeiden", variable=self.avoid_vignette_var, command=self.calculate_route, style="TCheckbutton").grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
@@ -342,7 +342,7 @@ class RouteFinderApp:
         
         # Stats Card
         self.stats_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        self.stats_card.grid(row=4, column=0, fill="x", pady=(0, 10))
+        self.stats_card.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         self.stats_card.columnconfigure(1, weight=1)
         ttk.Label(self.stats_card, text="Routen-Statistik", style="Header.TLabel").grid(row=0, column=0, columnspan=2, pady=(0, 6), sticky="w")
         
@@ -358,12 +358,12 @@ class RouteFinderApp:
             self.stats_labels[key] = lbl
             
         self.editor_card = ttk.Frame(sidebar, style="Card.TFrame", padding=10)
-        self.editor_card.grid(row=5, column=0, fill="x", pady=(0, 10))
+        self.editor_card.grid(row=5, column=0, sticky="ew", pady=(0, 10))
         self.editor_card.columnconfigure(0, weight=1)
         self.editor_card.grid_remove()
         
         btn_frame = ttk.Frame(sidebar, style="Sidebar.TFrame")
-        btn_frame.grid(row=6, column=0, fill="x", pady=(5, 5), sticky="ew")
+        btn_frame.grid(row=6, column=0, pady=(5, 5), sticky="ew")
         btn_frame.columnconfigure((0,1), weight=1)
         ttk.Button(btn_frame, text="Karte zentrieren", command=self.center_map).grid(row=0, column=0, padx=2, sticky="ew")
         ttk.Button(btn_frame, text="Verkehr zurücksetzen", command=self.reset_all_roads).grid(row=0, column=1, padx=2, sticky="ew")
@@ -459,7 +459,7 @@ class RouteFinderApp:
         self.lbl_risk_val.grid(row=4, column=1, sticky="e", pady=(3, 0))
         
         self.edit_risk_slider = ttk.Scale(self.editor_card, from_=0.0, to=1.0, value=edge.traffic_risk, command=self.on_risk_slider_move)
-        self.edit_risk_slider.grid(row=5, column=0, columnspan=2, fill="x", pady=(0, 5))
+        self.edit_risk_slider.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 5))
         ttk.Button(self.editor_card, text="Schließen", command=self.hide_edge_editor).grid(row=6, column=0, columnspan=2, pady=(5, 0), sticky="ew")
 
     def on_risk_slider_move(self, val):
