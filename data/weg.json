@@ -2,12 +2,16 @@
     "start": "Wien",
     "destination": "Bregenz",
     "mode": "Fastest",
+    "mode_name": "Schnellste Route",
     "avoid_vignette": false,
     "avoid_traffic": true,
     "path_found": true,
     "total_distance_km": 635,
     "actual_time_hours": 6.184615384615385,
     "actual_time_formatted": "6 Std. 11 Min.",
+    "total_fuel_liters": 54.2,
+    "total_elevation_gain_m": 2100,
+    "average_eco_score": 5.8,
     "vignette_needed": true,
     "vignette_roads_count": 6,
     "traffic_jams_encountered": 1,
@@ -28,7 +32,10 @@
             "speed_limit_kmh": 130,
             "vignette": true,
             "traffic_jam": true,
-            "traffic_risk": 0.0
+            "traffic_risk": 0.0,
+            "elevation_diff_m": 100,
+            "fuel_consumption_l": 5.3,
+            "eco_score": 6
         },
         {
             "from": "St. Pölten",
@@ -37,7 +44,10 @@
             "speed_limit_kmh": 130,
             "vignette": true,
             "traffic_jam": false,
-            "traffic_risk": 0.3
+            "traffic_risk": 0.3,
+            "elevation_diff_m": 150,
+            "fuel_consumption_l": 10.2,
+            "eco_score": 6
         },
         {
             "from": "Linz",
@@ -46,7 +56,10 @@
             "speed_limit_kmh": 130,
             "vignette": true,
             "traffic_jam": false,
-            "traffic_risk": 0.0
+            "traffic_risk": 0.0,
+            "elevation_diff_m": 50,
+            "fuel_consumption_l": 2.5,
+            "eco_score": 7
         },
         {
             "from": "Wels",
@@ -55,7 +68,10 @@
             "speed_limit_kmh": 130,
             "vignette": true,
             "traffic_jam": false,
-            "traffic_risk": 0.0
+            "traffic_risk": 0.0,
+            "elevation_diff_m": 200,
+            "fuel_consumption_l": 8.2,
+            "eco_score": 6
         },
         {
             "from": "Salzburg",
@@ -64,7 +80,10 @@
             "speed_limit_kmh": 130,
             "vignette": true,
             "traffic_jam": false,
-            "traffic_risk": 0.0
+            "traffic_risk": 0.0,
+            "elevation_diff_m": 400,
+            "fuel_consumption_l": 15.5,
+            "eco_score": 6
         },
         {
             "from": "Innsbruck",
@@ -73,7 +92,10 @@
             "speed_limit_kmh": 100,
             "vignette": true,
             "traffic_jam": false,
-            "traffic_risk": 0.0
+            "traffic_risk": 0.0,
+            "elevation_diff_m": 1200,
+            "fuel_consumption_l": 12.5,
+            "eco_score": 4
         }
     ]
 }
