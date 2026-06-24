@@ -22,6 +22,12 @@ Ein interaktives Wegfindungs- und Routenplanungssystem für Österreich in Pytho
   * Benutzerdaten werden in `.venv/user_credentials.json` abgelegt und durch `.gitignore` vor dem Hochladen geschützt.
   * Ein Reset-Button auf dem Login-Bildschirm erlaubt das Leeren des `data/`-Verzeichnisses.
 * **Datenexport**: Berechnete Routen werden als strukturierte JSON (`data/weg.json`) und als formatiertes Textprotokoll (`data/weg.txt`) exportiert.
+## KI-Optimierte Version (Ordner `Ki/`)
+
+Dieses Projekt verfügt über eine fortschrittliche, KI-optimierte Version des Routenplaners:
+* Die Source-Module befinden sich im Unterverzeichnis [Ki/](file:///c:/Users/hi20-/Documents/Bla/VSC/Schule/SEW/3_Schuljahr/Abschluss/Ki/).
+* Die `main.py` im Hauptordner lädt und startet automatisch diese KI-optimierten Module.
+* Eine detaillierte Aufstellung der Unterschiede (A*-Algorithmus, 34 Städte, Light-Mode-Ausschnitt, Animationen und Klimaschutz-Bilanzen) ist in der [Ki/README.md](file:///c:/Users/hi20-/Documents/Bla/VSC/Schule/SEW/3_Schuljahr/Abschluss/Ki/README.md) dokumentiert.
 
 ## Installation & Ausführung
 
