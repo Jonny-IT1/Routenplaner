@@ -1,0 +1,79 @@
+{
+    "start": "Wien",
+    "destination": "Bregenz",
+    "mode": "Fastest",
+    "avoid_vignette": false,
+    "avoid_traffic": true,
+    "path_found": true,
+    "total_distance_km": 635,
+    "actual_time_hours": 6.184615384615385,
+    "actual_time_formatted": "6 Std. 11 Min.",
+    "vignette_needed": true,
+    "vignette_roads_count": 6,
+    "traffic_jams_encountered": 1,
+    "route": [
+        "Wien",
+        "St. Pölten",
+        "Linz",
+        "Wels",
+        "Salzburg",
+        "Innsbruck",
+        "Bregenz"
+    ],
+    "legs": [
+        {
+            "from": "Wien",
+            "to": "St. Pölten",
+            "distance_km": 65,
+            "speed_limit_kmh": 130,
+            "vignette": true,
+            "traffic_jam": true,
+            "traffic_risk": 0.0
+        },
+        {
+            "from": "St. Pölten",
+            "to": "Linz",
+            "distance_km": 125,
+            "speed_limit_kmh": 130,
+            "vignette": true,
+            "traffic_jam": false,
+            "traffic_risk": 0.3
+        },
+        {
+            "from": "Linz",
+            "to": "Wels",
+            "distance_km": 30,
+            "speed_limit_kmh": 130,
+            "vignette": true,
+            "traffic_jam": false,
+            "traffic_risk": 0.0
+        },
+        {
+            "from": "Wels",
+            "to": "Salzburg",
+            "distance_km": 100,
+            "speed_limit_kmh": 130,
+            "vignette": true,
+            "traffic_jam": false,
+            "traffic_risk": 0.0
+        },
+        {
+            "from": "Salzburg",
+            "to": "Innsbruck",
+            "distance_km": 185,
+            "speed_limit_kmh": 130,
+            "vignette": true,
+            "traffic_jam": false,
+            "traffic_risk": 0.0
+        },
+        {
+            "from": "Innsbruck",
+            "to": "Bregenz",
+            "distance_km": 130,
+            "speed_limit_kmh": 100,
+            "vignette": true,
+            "traffic_jam": false,
+            "traffic_risk": 0.0
+        }
+    ]
+}
