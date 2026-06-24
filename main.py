@@ -2,25 +2,29 @@ import tkinter as tk
 from tkinter import messagebox
 import heapq, os, json, hashlib, shutil
 
-# Include Ki folder in path to resolve imports
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "Ki"))
+# Try loading from the KI folder, otherwise fallback to the old manual dataset and Dijkstra
+try:
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), "Ki"))
+    
+    from Ki.app import CITIES_GEO, EDGES, a_star, hash_password, reset_data_directory
+    
+    LON_MIN, LON_MAX = 9.4, 16.8
+    LAT_MIN, LAT_MAX = 46.4, 48.5
+    
+    CITIES = {}
+    for name, (lon, lat, _) in CITIES_GEO.items():
+        x = 50 + (lon - LON_MIN) / (LON_MAX - LON_MIN) * 900
+        y = 600 - 50 - (lat - LAT_MIN) / (LAT_MAX - LAT_MIN) * 500
+        CITIES[name] = (int(x), int(y))
+        
+    def dijkstra(start, dest, mode, avoid_vignette, avoid_traffic, additional_focus="None"):
+        return a_star(start, dest, mode, avoid_vignette, avoid_traffic, additional_focus)
 
-from Ki.app import CITIES_GEO, EDGES, a_star, hash_password, reset_data_directory
-
-LON_MIN, LON_MAX = 9.4, 16.8
-LAT_MIN, LAT_MAX = 46.4, 48.5
-
-# Convert 34 geographical coordinates into main.py layout space
-CITIES = {}
-for name, (lon, lat, _) in CITIES_GEO.items():
-    x = 50 + (lon - LON_MIN) / (LON_MAX - LON_MIN) * 900
-    y = 600 - 50 - (lat - LAT_MIN) / (LAT_MAX - LAT_MIN) * 500
-    CITIES[name] = (int(x), int(y))
-
-def dijkstra(start, dest, mode, avoid_vignette, avoid_traffic):
-    return a_star(start, dest, mode, avoid_vignette, avoid_traffic)
+except Exception as e:
+    # FALLBACK: Use the original manual layout and standard Dijkstra algorithm from fallback module
+    from fallback import CITIES, EDGES, dijkstra, hash_password, reset_data_directory
 
 def save_route_to_files(start, dest, mode, avoid_vignette, avoid_traffic, path_nodes, path_edges):
     os.makedirs("data", exist_ok=True)
@@ -59,6 +63,7 @@ class RouteFinderApp:
         self.start_city, self.dest_city, self.selected_edge = "Wien", "Bregenz", None
         self.path_nodes, self.path_edges = [], []
         self.zoom_factor = 1.0
+        self.additional_focus_mode_val = "None"
         
         self.show_login_screen()
 
@@ -145,6 +150,19 @@ class RouteFinderApp:
         tk.Label(sidebar, text="Optimierung:", bg=self.bg_sidebar, fg=self.fg_white).pack(anchor="w", pady=(10, 0))
         tk.OptionMenu(sidebar, self.routing_mode, *modes.keys(), command=lambda val: self.on_mode_change(modes[val])).pack(fill="x", pady=2)
         
+        # Additional Focus Modes
+        self.additional_focus_mode = tk.StringVar(value="Keiner")
+        add_focus_options = {
+            "Keiner": "None",
+            "Schnellste": "Fastest",
+            "Kürzeste": "Shortest",
+            "Kraftstoff": "Fuel",
+            "Eco": "Eco",
+            "Flachste": "Flat"
+        }
+        tk.Label(sidebar, text="Zusätzlicher Fokus:", bg=self.bg_sidebar, fg=self.fg_white).pack(anchor="w", pady=(10, 0))
+        tk.OptionMenu(sidebar, self.additional_focus_mode, *add_focus_options.keys(), command=lambda val: self.on_add_focus_change(add_focus_options[val])).pack(fill="x", pady=2)
+        
         # Checkboxes
         self.avoid_vignette_var, self.avoid_traffic_var = tk.BooleanVar(value=False), tk.BooleanVar(value=True)
         tk.Checkbutton(sidebar, text="Vignette meiden", variable=self.avoid_vignette_var, command=self.calculate_route, bg=self.bg_sidebar, fg=self.fg_white, selectcolor=self.bg_dark).pack(anchor="w", pady=2)
@@ -207,6 +225,10 @@ class RouteFinderApp:
 
     def on_mode_change(self, val):
         self.routing_mode.set(val)
+        self.calculate_route()
+
+    def on_add_focus_change(self, val):
+        self.additional_focus_mode_val = val
         self.calculate_route()
 
     def on_node_click(self, event, left):
@@ -279,7 +301,7 @@ class RouteFinderApp:
 
     def calculate_route(self):
         mode, avoid_vignette, avoid_traffic = self.routing_mode.get(), self.avoid_vignette_var.get(), self.avoid_traffic_var.get()
-        cost, self.path_nodes, self.path_edges = dijkstra(self.start_city, self.dest_city, mode, avoid_vignette, avoid_traffic)
+        cost, self.path_nodes, self.path_edges = dijkstra(self.start_city, self.dest_city, mode, avoid_vignette, avoid_traffic, self.additional_focus_mode_val)
         save_route_to_files(self.start_city, self.dest_city, mode, avoid_vignette, avoid_traffic, self.path_nodes, self.path_edges)
         
         if self.path_nodes:

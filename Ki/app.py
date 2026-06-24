@@ -185,18 +185,47 @@ def reset_data_directory():
             shutil.rmtree(p) if os.path.isdir(p) else os.unlink(p)
         messagebox.showinfo("Erfolg", "Daten gelöscht!")
 
-def calculate_cost(e, mode, avoid_vignette, avoid_traffic):
+def calculate_cost(e, mode, avoid_vignette, avoid_traffic, additional_focus="None"):
+    dist_cost = e.distance
+    time_cost = (e.distance / e.speed_limit) * (1.0 + (2.0 if e.traffic_jam else 0) + (e.traffic_risk * 1.5 if avoid_traffic else 0))
+    fuel_cost = e.fuel_consumption
+    co2_cost = (e.distance * e.co2_emissions_g) / 1000.0
+    elev_cost = e.elevation_diff
+    
     costs = {
-        "Shortest": e.distance,
-        "Fastest": (e.distance / e.speed_limit) * (1.0 + (2.0 if e.traffic_jam else 0) + (e.traffic_risk * 1.5 if avoid_traffic else 0)),
-        "Fuel": e.fuel_consumption,
-        "Eco": (e.distance * e.co2_emissions_g) / 1000.0,
-        "Flat": e.elevation_diff
+        "Shortest": dist_cost,
+        "Fastest": time_cost,
+        "Fuel": fuel_cost,
+        "Eco": co2_cost,
+        "Flat": elev_cost
     }
-    cost = costs.get(mode, e.distance)
+    
+    cost = costs.get(mode, dist_cost)
+    
+    # Scale secondary cost factor using approximate kilometer equivalents
+    scales = {
+        "Shortest": 1.0,
+        "Fastest": 80.0,
+        "Fuel": 12.5,
+        "Eco": 6.0,
+        "Flat": 0.05
+    }
+    
+    if additional_focus and additional_focus != "None":
+        sec_cost_raw = costs.get(additional_focus, 0.0)
+        prim_scale = scales.get(mode, 1.0)
+        sec_scale = scales.get(additional_focus, 1.0)
+        
+        prim_equiv = cost * prim_scale
+        sec_equiv = sec_cost_raw * sec_scale
+        
+        # Combined cost with 0.5 weight for secondary focus
+        combined_equiv = prim_equiv + 0.5 * sec_equiv
+        cost = combined_equiv / prim_scale
+
     if avoid_vignette and e.has_vignette:
         cost += {"Shortest": 500.0, "Fastest": 5.0, "Fuel": 50.0, "Eco": 100.0, "Flat": 2000.0}.get(mode, 500.0)
-    if avoid_traffic and mode != "Fastest":
+    if avoid_traffic and mode != "Fastest" and additional_focus != "Fastest":
         cost += (150.0 if e.traffic_jam else 0) + e.traffic_risk * 75.0
     return cost
 
@@ -227,10 +256,10 @@ def get_heuristic(curr, dest, mode):
         return abs(coord_curr[2] - coord_dest[2])
     return dist_km
 
-def a_star(start, dest, mode, avoid_vig, avoid_traf):
+def a_star(start, dest, mode, avoid_vig, avoid_traf, additional_focus="None"):
     adj = {n: [] for n in CITIES_GEO}
     for e in EDGES:
-        cost = calculate_cost(e, mode, avoid_vig, avoid_traf)
+        cost = calculate_cost(e, mode, avoid_vig, avoid_traf, additional_focus)
         adj[e.node_a].append((e.node_b, cost, e))
         adj[e.node_b].append((e.node_a, cost, e))
         
@@ -299,6 +328,7 @@ class RouteFinderApp:
         self.path_nodes, self.path_edges = [], []
         self.zoom_factor = 1.0
         self.animating = False
+        self.additional_focus_mode_val = "None"
         
         self.show_login_screen()
 
@@ -428,6 +458,21 @@ class RouteFinderApp:
         opt_mode = tk.OptionMenu(sidebar, self.routing_mode, *modes.keys(), command=lambda val: self.on_mode_change(modes[val]))
         opt_mode.config(bg=self.bg_card, fg=self.fg_dark, font=("Segoe UI", 9), relief="solid", bd=1)
         opt_mode.pack(fill="x", pady=2)
+        
+        # Additional Focus Modes
+        self.additional_focus_mode = tk.StringVar(value="Keiner")
+        add_focus_options = {
+            "Keiner": "None",
+            "Kürzeste Route": "Shortest",
+            "Schnellste Route": "Fastest",
+            "Kraftstoffsparend": "Fuel",
+            "Klimaneutral (Eco)": "Eco",
+            "Flachste Route": "Flat"
+        }
+        tk.Label(sidebar, text="Zusätzlicher Fokus:", bg=self.bg_sidebar, fg=self.fg_muted, font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(10, 0))
+        opt_add_focus = tk.OptionMenu(sidebar, self.additional_focus_mode, *add_focus_options.keys(), command=lambda val: self.on_add_focus_change(add_focus_options[val]))
+        opt_add_focus.config(bg=self.bg_card, fg=self.fg_dark, font=("Segoe UI", 9), relief="solid", bd=1)
+        opt_add_focus.pack(fill="x", pady=2)
         
         # Checkboxes
         self.avoid_vignette_var, self.avoid_traffic_var = tk.BooleanVar(value=False), tk.BooleanVar(value=True)
@@ -570,6 +615,10 @@ class RouteFinderApp:
         self.routing_mode.set(val)
         self.calculate_route()
 
+    def on_add_focus_change(self, val):
+        self.additional_focus_mode_val = val
+        self.calculate_route()
+
     def on_node_click(self, event, left):
         item = self.canvas.find_withtag("current")[0]
         name = self.node_by_oval_id.get(item)
@@ -656,7 +705,7 @@ class RouteFinderApp:
         avoid_vig = self.avoid_vignette_var.get()
         avoid_traf = self.avoid_traffic_var.get()
         
-        cost, self.path_nodes, self.path_edges = a_star(self.start_city, self.dest_city, mode, avoid_vig, avoid_traf)
+        cost, self.path_nodes, self.path_edges = a_star(self.start_city, self.dest_city, mode, avoid_vig, avoid_traf, self.additional_focus_mode_val)
         save_route_to_files(self.start_city, self.dest_city, mode, avoid_vig, avoid_traf, self.path_nodes, self.path_edges)
         
         if self.path_nodes:
